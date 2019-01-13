@@ -34,9 +34,10 @@ type State struct {
 // A single-field status line will not clear all the other fields.
 func (s *State) parse(line string) error {
 	// The output seems to end with two carriage returns and then one line feed (vs. a single CR)
-	// It also starts with #> vs. just > as documented. Clean it up before using.
+	// It also starts with #> on OS X and just > on Linux, as documented. Clean it up before using.
 	line = strings.TrimSuffix(line, "\r\r\n")
 	line = strings.TrimPrefix(line, "#>")
+	line = strings.TrimPrefix(line, ">")
 
 	var err error
 	if len(line) == query1ResponseLength {
