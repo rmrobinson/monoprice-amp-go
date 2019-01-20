@@ -7,6 +7,7 @@ import (
 	"github.com/tarm/serial"
 	"log"
 	"strings"
+	"sync"
 )
 
 const (
@@ -45,6 +46,7 @@ type SerialAmplifier struct {
 	id    int
 
 	port *serial.Port
+	portLock sync.Mutex
 }
 
 // NewSerialAmplifier creates a new serial amplifier using the supplied serial port.
@@ -99,6 +101,10 @@ func (a *SerialAmplifier) Zone(id int) *Zone {
 
 // execute handles the logic of writing to the serial port and reading back the echoed command.
 func (a *SerialAmplifier) execute(command string) error {
+	// Synchronize writes to the port to avoid reading back interleaved output
+	a.portLock.Lock()
+	defer a.portLock.Unlock()
+
 	wroteCount, err := a.port.Write([]byte(command))
 	if err != nil {
 		return err
