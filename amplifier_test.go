@@ -15,3 +15,5 @@ func (t *testAmp) execute(cmd string) error {
 func (t *testAmp) read() (string, error) {
 	return t.data, t.readErr
 }
+func (t *testAmp) lock()   {}
+func (t *testAmp) unlock() {}
