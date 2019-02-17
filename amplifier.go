@@ -4,10 +4,10 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/tarm/serial"
-	"log"
 	"strings"
 	"sync"
+
+	"github.com/tarm/serial"
 )
 
 const (
@@ -38,6 +38,9 @@ type amplifier interface {
 	ID() int
 	execute(string) error
 	read() (string, error)
+
+	lock()
+	unlock()
 }
 
 // SerialAmplifier is an implementation of the Monoprice amplifier backed by a serial port.
@@ -45,7 +48,7 @@ type SerialAmplifier struct {
 	zones map[int]*Zone
 	id    int
 
-	port *serial.Port
+	port     *serial.Port
 	portLock sync.Mutex
 }
 
@@ -58,29 +61,44 @@ func NewSerialAmplifier(port *serial.Port) (*SerialAmplifier, error) {
 		id:    1,
 	}
 
-	cmd := fmt.Sprintf("%s%d0\r", queryRequestPrefix, ret.id)
-
-	err := ret.execute(cmd)
+	err := ret.setup()
 	if err != nil {
 		return nil, err
 	}
 
+	return ret, nil
+}
+
+func (a *SerialAmplifier) lock() {
+	a.portLock.Lock()
+}
+
+func (a *SerialAmplifier) unlock() {
+	a.portLock.Unlock()
+}
+
+func (a *SerialAmplifier) setup() error {
+	cmd := fmt.Sprintf("%s%d0\r", queryRequestPrefix, a.id)
+	err := a.execute(cmd)
+	if err != nil {
+		return err
+	}
+
 	for i := 1; i <= 6; i++ {
-		line, err := ret.read()
+		line, err := a.read()
 		if err != nil {
-			log.Printf("Error reading line: %s\n", err.Error())
+			return err
 		}
 
-		z, err := newZone(ret, i, line)
+		z, err := newZone(a, i, line)
 		if err != nil {
-			log.Printf("Error creating zone: %s\n", err.Error())
 			continue
 		}
 
-		ret.zones[i] = z
+		a.zones[i] = z
 	}
 
-	return ret, nil
+	return nil
 }
 
 // ID returns the ID (1-3) of this amplifier.
@@ -99,12 +117,24 @@ func (a *SerialAmplifier) Zone(id int) *Zone {
 	return nil
 }
 
+// Reset is used to clear the underlying serial port and reset things to a good state.
+// This may be used if errors are detected on the port to clear any oddities being read.
+// Any existing zone references will be invalidated and should not be used anymore.
+func (a *SerialAmplifier) Reset() error {
+	a.lock()
+	defer a.unlock()
+
+	err := a.port.Flush()
+	if err != nil {
+		return err
+	}
+
+	a.zones = map[int]*Zone{}
+	return a.setup()
+}
+
 // execute handles the logic of writing to the serial port and reading back the echoed command.
 func (a *SerialAmplifier) execute(command string) error {
-	// Synchronize writes to the port to avoid reading back interleaved output
-	a.portLock.Lock()
-	defer a.portLock.Unlock()
-
 	wroteCount, err := a.port.Write([]byte(command))
 	if err != nil {
 		return err
@@ -123,10 +153,8 @@ func (a *SerialAmplifier) execute(command string) error {
 	read = strings.TrimPrefix(read, "#")
 
 	if len(read) != wroteCount {
-		log.Printf("read '%x', wrote '%x'\n", read, command)
 		return errors.New("read back different length than wrote")
 	} else if read != command {
-		log.Printf("read '%x', wrote '%x'\n", read, command)
 		return errors.New("read back different string than command")
 	}
 

@@ -40,6 +40,10 @@ func (z *Zone) ID() string {
 func (z *Zone) Refresh() error {
 	cmd := fmt.Sprintf("%s%s\r", queryRequestPrefix, z.ID())
 
+	// Synchronize writes to the amp to avoid reading back interleaved output
+	z.a.lock()
+	defer z.a.unlock()
+
 	err := z.a.execute(cmd)
 	if err != nil {
 		return err
@@ -169,6 +173,10 @@ func (z *Zone) SetSourceChannel(channelID int) error {
 
 // set applies the request action to the zone.
 func (z *Zone) set(ac actionCode, actionValue int) error {
+	// Synchronize writes to the amp to avoid reading back interleaved output
+	z.a.lock()
+	defer z.a.unlock()
+
 	cmd := fmt.Sprintf("%s%s%s%02d\r", controlRequestPrefix, z.ID(), ac, actionValue)
 	return z.a.execute(cmd)
 }

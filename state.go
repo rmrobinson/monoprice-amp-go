@@ -10,7 +10,7 @@ var (
 	// ErrInvalidCommandCode is returned if an invalid command code is detected
 	ErrInvalidCommandCode = errors.New("invalid command code")
 	// ErrInvalidInput is detected if the command string format doesn't match as expected
-	ErrInvalidInput       = errors.New("invalid command string")
+	ErrInvalidInput = errors.New("invalid command string")
 )
 
 // State contains the current state of a given zone, as retrieved from the controller.
