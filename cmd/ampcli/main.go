@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/rmrobinson/monoprice-amp-go"
 	"github.com/tarm/serial"
+	"time"
 )
 
 func main() {
@@ -25,8 +26,9 @@ func main() {
 	fmt.Printf("Using %s to turn zone %d %t\n", *port, *zone, *on)
 
 	c := &serial.Config{
-		Name: *port,
-		Baud: 9600,
+		Name:        *port,
+		Baud:        9600,
+		ReadTimeout: 2 * time.Second,
 	}
 	s, err := serial.OpenPort(c)
 

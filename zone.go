@@ -10,6 +10,9 @@ var (
 	ErrUnsupportedRange = errors.New("unsupported range")
 )
 
+// maxBalance is the highest balance level the amplifier accepts (10 is centered).
+const maxBalance = 20
+
 // Zone represents a single output on a receiver.
 type Zone struct {
 	a  amplifier
@@ -122,7 +125,7 @@ func (z *Zone) SetTreble(level int) error {
 		return err
 	}
 
-	z.state.Volume = level
+	z.state.Treble = level
 	return nil
 }
 
@@ -137,13 +140,13 @@ func (z *Zone) SetBass(level int) error {
 		return err
 	}
 
-	z.state.Volume = level
+	z.state.Bass = level
 	return nil
 }
 
 // SetBalance applies the supplied balance level to the zone.
 func (z *Zone) SetBalance(level int) error {
-	if level < 0 || level > 38 {
+	if level < 0 || level > maxBalance {
 		return ErrUnsupportedRange
 	}
 
@@ -152,7 +155,7 @@ func (z *Zone) SetBalance(level int) error {
 		return err
 	}
 
-	z.state.Volume = level
+	z.state.Balance = level
 	return nil
 }
 
