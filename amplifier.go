@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 
@@ -32,6 +33,31 @@ const (
 	pa                                = "PA"
 )
 
+// ErrTimeout is returned if the amplifier doesn't respond in time. The serial port must be opened
+// with a non-zero ReadTimeout for this to be detected; otherwise a silent amplifier blocks forever.
+var ErrTimeout = errors.New("timed out waiting for amplifier")
+
+// serialPort is the subset of *serial.Port used by SerialAmplifier.
+type serialPort interface {
+	io.ReadWriter
+	Flush() error
+}
+
+// timeoutReader turns the zero-byte, no-error read that a serial port with a ReadTimeout
+// returns on expiry into ErrTimeout, which bufio would otherwise retry (and eventually
+// report as io.ErrNoProgress).
+type timeoutReader struct {
+	r io.Reader
+}
+
+func (t timeoutReader) Read(p []byte) (int, error) {
+	n, err := t.r.Read(p)
+	if n == 0 && err == nil {
+		return 0, ErrTimeout
+	}
+	return n, err
+}
+
 // amplifier defines the required methods for an implementation of an amplifier.
 // Currently only used for testing.
 type amplifier interface {
@@ -48,17 +74,27 @@ type SerialAmplifier struct {
 	zones map[int]*Zone
 	id    int
 
-	port     *serial.Port
+	port serialPort
+	// reader is shared across all reads; a per-call reader would discard any bytes it had
+	// buffered beyond the first line, corrupting the next response.
+	reader   *bufio.Reader
 	portLock sync.Mutex
 }
 
 // NewSerialAmplifier creates a new serial amplifier using the supplied serial port.
 // If the amplifier cannot be queried (i.e. if the port is not ready) an error will be returned.
+// The port should be opened with a ReadTimeout (see serial.Config) so a stalled amplifier
+// results in ErrTimeout rather than a hang.
 func NewSerialAmplifier(port *serial.Port) (*SerialAmplifier, error) {
+	return newSerialAmplifier(port)
+}
+
+func newSerialAmplifier(port serialPort) (*SerialAmplifier, error) {
 	ret := &SerialAmplifier{
-		zones: map[int]*Zone{},
-		port:  port,
-		id:    1,
+		zones:  map[int]*Zone{},
+		port:   port,
+		reader: bufio.NewReader(timeoutReader{port}),
+		id:     1,
 	}
 
 	err := ret.setup()
@@ -129,6 +165,7 @@ func (a *SerialAmplifier) Reset() error {
 		return err
 	}
 
+	a.reader.Reset(timeoutReader{a.port})
 	a.zones = map[int]*Zone{}
 	return a.setup()
 }
@@ -141,9 +178,7 @@ func (a *SerialAmplifier) execute(command string) error {
 	}
 
 	// Read back the echoed command
-	reader := bufio.NewReader(a.port)
-
-	read, err := reader.ReadString('\n')
+	read, err := a.readLine()
 	if err != nil {
 		return err
 	}
@@ -165,10 +200,21 @@ func (a *SerialAmplifier) execute(command string) error {
 // It is the caller's responsibility to know how many times it may be necessary to call
 // based upon the previously sent command; this will block if there is nothing to read.
 func (a *SerialAmplifier) read() (string, error) {
-	reader := bufio.NewReader(a.port)
+	return a.readLine()
+}
 
-	// Read the response to the command
-	read, err := reader.ReadString('\n')
+// readLine reads up to the next line feed. On failure any partial line and stale buffered
+// input are discarded so the next command starts from a clean stream.
+func (a *SerialAmplifier) readLine() (string, error) {
+	line, err := a.reader.ReadString('\n')
+	if err != nil {
+		a.reader.Reset(timeoutReader{a.port})
+		_ = a.port.Flush()
+		return "", err
+	}
+	return line, nil
+}
 
-	return read, err
+func newReader(port io.Reader) *bufio.Reader {
+	return bufio.NewReader(timeoutReader{port})
 }
